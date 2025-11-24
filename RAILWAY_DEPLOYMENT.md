@@ -9,9 +9,9 @@ POSTGRES_URL=postgresql://username:password@host:port/database
 POSTGRES_PRISMA_URL=postgresql://username:password@host:port/database
 PG_CONNECTION_STRING=postgresql://username:password@host:port/database
 
-### CORS Configuration
-ALLOWED_ORIGINS=https://zuber-gules.vercel.app,https://www.zuber-gules.vercel.app
-CORS_ORIGINS=https://zuber-gules.vercel.app,https://www.zuber-gules.vercel.app
+### CORS Configuration (CRITICAL for Frontend)
+CORS_ORIGINS=https://zuber-37e2.vercel.app,http://localhost:3000
+SOCKET_CORS_ORIGINS=https://zuber-37e2.vercel.app,http://localhost:3000
 
 ### JWT Configuration
 JWT_SECRET=your-jwt-secret-key-here
