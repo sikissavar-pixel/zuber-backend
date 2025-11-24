@@ -1,5 +1,6 @@
 [build]
-# Let Railway use Dockerfile (removes NIXPACKS to use Dockerfile CMD)
+# CRITICAL: Explicitly tell Railway to use Dockerfile, not auto-detect Node.js
+builder = "DOCKERFILE"
 
 [deploy]
 # Dockerfile CMD will be used: sh -c "uvicorn app.main:sio_app --host 0.0.0.0 --port ${PORT:-8000}"
