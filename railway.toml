@@ -1,9 +1,9 @@
 [build]
-builder = "NIXPACKS"
+# Let Railway use Dockerfile (removes NIXPACKS to use Dockerfile CMD)
 
 [deploy]
-# Use FastAPI backend with uvicorn (app.main:sio_app is the ASGI app with Socket.IO)
-startCommand = "uvicorn app.main:sio_app --host 0.0.0.0 --port $PORT"
+# Dockerfile CMD will be used: sh -c "uvicorn app.main:sio_app --host 0.0.0.0 --port ${PORT:-8000}"
+# Do NOT override with startCommand - it breaks PORT env expansion
 healthcheckPath = "/health"
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
