@@ -6,13 +6,75 @@ from sqlmodel import SQLModel
 from ..auth import require_role, get_current_user, verify_password, get_password_hash
 from ..socket import sio
 import asyncio
+import string
+import secrets
 from ..models.user import User
 
 router = APIRouter(prefix="/api/partners", tags=["partners"])
 
+def create_random_password(length: int = 10) -> str:
+    """Generate a secure random password with at least 10 chars, mixed case and digits."""
+    alphabet = string.ascii_letters + string.digits
+    while True:
+        password = "".join(secrets.choice(alphabet) for _ in range(length))
+        if (any(c.islower() for c in password) 
+            and any(c.isupper() for c in password) 
+            and any(c.isdigit() for c in password)):
+            return password
+
 @router.get("/")
 def list_partners(session: Session = Depends(get_session)):
     return session.exec(select(Partner)).all()
+
+@router.post("/approve/{partner_id}", dependencies=[Depends(require_role("admin"))])
+def approve_partner(partner_id: int, session: Session = Depends(get_session)):
+    partner = session.get(Partner, partner_id)
+    if not partner:
+        raise HTTPException(status_code=404, detail="Partner bulunamadı")
+
+    # 1. User var mı kontrol et
+    user = session.exec(select(User).where(User.email == partner.contact_email)).first()
+    
+    # Şifre üret
+    password = create_random_password()
+    password_hash = get_password_hash(password)
+
+    if user:
+        # User varsa status güncelle, şifreyi resetleme (isteğe bağlı, user notuna göre resetlemiyoruz)
+        # Ancak prompt: "User zaten varsa password reset yapmasın, sadece status güncellesin."
+        user.role = "partner"
+        session.add(user)
+        # Mevcut user için şifre dönmemize gerek yok veya bildirebiliriz
+        final_password = None 
+    else:
+        # 2. Yeni user oluştur
+        user = User(
+            full_name=partner.name,
+            email=partner.contact_email,
+            role="partner",
+            password_hash=password_hash,
+            contact_phone=partner.contact_phone,
+            must_change_password=True
+        )
+        session.add(user)
+        final_password = password
+
+    # 3. Partner status güncelle
+    partner.approved = True
+    session.add(partner)
+    
+    session.commit()
+    session.refresh(partner)
+    if user:
+        session.refresh(user)
+
+    # Admin'e şifreyi dön
+    return {
+        "status": "approved", 
+        "password": final_password, # Eğer user zaten varsa null döner
+        "partner_id": partner.id,
+        "user_id": user.id if user else None
+    }
 
 @router.post("/", dependencies=[Depends(require_role("admin"))])
 def create_partner(payload: PartnerCreate, session: Session = Depends(get_session)):
