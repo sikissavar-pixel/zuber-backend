@@ -1,32 +1,30 @@
-# Use Node.js 18 Alpine for smaller image size
-FROM node:18-alpine
+# Use Python 3.11 slim image
+FROM python:3.11-slim
 
 # Set working directory
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install dependencies
-RUN if [ -f package-lock.json ]; then npm ci --only=production; else npm install --omit=dev; fi
+# Copy requirements first for better caching
+COPY requirements.txt .
 
-# Copy source code
-COPY src/ ./src/
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Create non-root user for security
-RUN addgroup -g 1001 -S nodejs
-RUN adduser -S nodejs -u 1001
+# Copy application code
+COPY app ./app
 
-# Change ownership of the app directory
-RUN chown -R nodejs:nodejs /app
-USER nodejs
+# Create non-root user
+RUN useradd -m -u 1001 appuser && chown -R appuser:appuser /app
+USER appuser
 
-# Expose port (Railway will set PORT env var)
-EXPOSE 3001
+# Expose port (Railway will override this with $PORT)
+EXPOSE 8000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:' + (process.env.PORT || 3001) + '/status', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) }).on('error', () => process.exit(1))"
-
-# Start the application
-CMD ["node", "src/server.js"]
+# Start uvicorn server
+CMD uvicorn app.main:sio_app --host 0.0.0.0 --port ${PORT:-8000}
