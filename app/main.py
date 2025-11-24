@@ -34,6 +34,11 @@ origins = list({*default_origins, *configured})
 # Initialize DB tables
 init_db()
 
+# Health check endpoint for Railway
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
+
 # Routers
 app.include_router(users.router)
 app.include_router(reservations.router)
