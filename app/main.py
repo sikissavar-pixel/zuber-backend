@@ -1,3 +1,4 @@
+import os
 import socketio as _socketio
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -55,8 +56,10 @@ app.include_router(admin_tools.router)
 app.include_router(admin_panel.router)
 app.include_router(admin_manage.router)
 
-# Serve static files (uploads)
-app.mount("/static", StaticFiles(directory=str((__file__[:-7] if __file__.endswith("main.py") else __file__) and __file__.replace("main.py","static"))), name="static")
+# Serve static files (uploads) - only if directory exists
+static_dir = os.path.join(os.path.dirname(__file__), "static")
+if os.path.exists(static_dir):
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 # Socket.IO ASGI app uses the shared server from app/socket.py
 # Wrap the top-level ASGI app with CORS so that all responses
