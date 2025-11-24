@@ -1,1 +1,14 @@
+node_modules/
+*.log
+logs/
+coverage/
+.nyc_output/
+dev.db
 .env
+.env.local
+.env.production
+.env.test
+dist/
+build/
+.DS_Store
+Thumbs.db

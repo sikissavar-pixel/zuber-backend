@@ -29,5 +29,5 @@ USER appuser
 # Expose port (Railway will override this with $PORT)
 EXPOSE 8000
 
-# Start uvicorn server
-CMD uvicorn app.main:sio_app --host 0.0.0.0 --port ${PORT:-8000}
+# Start uvicorn server with shell to expand $PORT
+CMD sh -c "uvicorn app.main:sio_app --host 0.0.0.0 --port ${PORT:-8000}"
