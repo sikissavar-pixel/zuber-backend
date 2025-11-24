@@ -34,4 +34,4 @@ EXPOSE 8000
 
 # Start uvicorn server with shell to expand $PORT
 # Run database initialization before starting server
-CMD sh -c "python init_db.py && uvicorn app.main:sio_app --host 0.0.0.0 --port ${PORT:-8000}"
+CMD sh -c "python init_db.py && uvicorn app.main:sio_app --host 0.0.0.0 --port ${PORT}"
