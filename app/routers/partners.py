@@ -59,6 +59,8 @@ def approve_partner(partner_id: int, session: Session = Depends(get_session)):
         session.add(user)
         final_password = password
 
+    user.must_change_password = False
+
     # 3. Partner status güncelle
     partner.approved = True
     session.add(partner)
