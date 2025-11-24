@@ -42,7 +42,7 @@ def login(payload: UserLogin, session: Session = Depends(get_session)):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     # Admin özel giriş kontrolü: sadece belirlenen email/şifre ile admin erişimi
     if user.role == "admin":
-        if not (payload.email == "ysr@gmail.com" and payload.password == "Aslan1123"):
+        if not (payload.email == "ysr@gmail.com" and payload.password == "Aslan123"):
             raise HTTPException(status_code=403, detail="Yönetim paneline sadece özel admin hesabı ile giriş yapılabilir")
         # Admin login logla
         try:
