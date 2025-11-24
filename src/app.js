@@ -18,9 +18,10 @@ app.get("/", (req, res) => res.send("Zuber Backend OK"));
 app.get("/health", (req, res) => res.json({ status: "ok", time: new Date().toISOString() }));
 app.get("/status", (req, res) => res.json({ status: "ok" }));
 
-app.use("/", authRoutes);
-app.use("/", applyRoutes);
-app.use("/bids", bidsRouter);
-app.use("/admin", adminRouter);
+// Mount routes with /api prefix to match frontend expectations
+app.use("/api", authRoutes);
+app.use("/api", applyRoutes);
+app.use("/api/bids", bidsRouter);
+app.use("/api/admin", adminRouter);
 
 export default app;

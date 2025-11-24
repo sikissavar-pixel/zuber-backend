@@ -2,9 +2,9 @@ import { Router } from "express";
 import { register, login } from "../controllers/auth.controller.js";
 
 const r = Router();
-r.post("/login", login);
-r.post("/register", register);
-r.post("/api/users/login", login);
-r.post("/api/users/register", register);
+// Frontend expects /api/users/login and /api/users/register
+// Since app.js mounts this at /api, we use /users prefix here
+r.post("/users/login", login);
+r.post("/users/register", register);
 
 export default r;
