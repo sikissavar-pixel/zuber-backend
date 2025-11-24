@@ -1,0 +1,27 @@
+# Railway ignore file - exclude unnecessary files from deployment
+node_modules/
+npm-debug.log*
+.npm
+.env.local
+.env.development
+.env.test
+.git/
+.gitignore
+README.md
+*.md
+!RAILWAY_DEPLOYMENT.md
+Dockerfile
+railway.toml
+.nyc_output/
+coverage/
+.nyc_output/
+coverage/
+*.log
+logs/
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
