@@ -19,6 +19,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY app ./app
 
+# Copy database initialization script
+COPY init_db.py .
+
 # Create static directory if it doesn't exist
 RUN mkdir -p app/static
 
@@ -30,4 +33,5 @@ USER appuser
 EXPOSE 8000
 
 # Start uvicorn server with shell to expand $PORT
-CMD sh -c "uvicorn app.main:sio_app --host 0.0.0.0 --port ${PORT:-8000}"
+# Run database initialization before starting server
+CMD sh -c "python init_db.py && uvicorn app.main:sio_app --host 0.0.0.0 --port ${PORT:-8000}"
