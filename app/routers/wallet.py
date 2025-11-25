@@ -1,17 +1,15 @@
 from decimal import Decimal
-from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select, SQLModel
 from ..database import get_session
-from ..auth import get_current_user, require_role
+from ..auth import get_current_user
 from ..models.user import User
 from ..models.wallet import Wallet, WalletTransaction, WalletSummary
 from ..models.reservation import Reservation
 import os
 from datetime import datetime
-import logging
 
-router = APIRouter(prefix="/api/wallet", tags=["wallet"])
-logger = logging.getLogger(__name__)
+router = APIRouter(tags=["Wallet"])
 
 
 def _get_or_create_wallet(session: Session, user_id: int) -> Wallet:
@@ -136,23 +134,20 @@ def deposit_alias(payload: TopupPayload, session: Session = Depends(get_session)
 
 
 @router.patch("/add-test-balance")
-def add_test_balance(
-    amount: int = Body(..., embed=True, ge=1),
-    session: Session = Depends(get_session),
+async def add_test_balance(
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
 ):
-    if current_user.role != "partner":
-        raise HTTPException(status_code=403, detail="Only partners can add test balance.")
+    wallet = db.query(Wallet).filter(Wallet.user_id == current_user.id).first()
+    if not wallet:
+        raise HTTPException(status_code=404, detail="Wallet not found")
 
-    wallet = _get_or_create_wallet(session, current_user.id)
-    wallet.partner_balance = (wallet.partner_balance or Decimal("0")) + Decimal(amount)
-    session.add(wallet)
-    session.commit()
-    session.refresh(wallet)
+    wallet.partner_balance = (wallet.partner_balance or Decimal("0.00")) + Decimal("500")
+    db.add(wallet)
+    db.commit()
+    db.refresh(wallet)
 
-    logger.warning("Test balance added", extra={"user_id": current_user.id, "amount": amount})
-
-    return {"success": True, "new_balance": str(wallet.partner_balance)}
+    return {"message": "Balance added", "new_balance": wallet.partner_balance}
 
 
 class BlockPayload(SQLModel):
