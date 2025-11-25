@@ -27,6 +27,18 @@ def init_db():
                     conn.exec_driver_sql("ALTER TABLE reservation ADD COLUMN total_amount NUMERIC DEFAULT 0")
                 if "payment_reference" not in names:
                     conn.exec_driver_sql("ALTER TABLE reservation ADD COLUMN payment_reference TEXT")
+                # Ensure wallet accounting columns exist
+                wcols = conn.exec_driver_sql("PRAGMA table_info('wallet')").fetchall()
+                wnames = {c[1] for c in wcols}
+                def add_wallet_col(name: str):
+                    if name not in wnames:
+                        try:
+                            conn.exec_driver_sql(f"ALTER TABLE wallet ADD COLUMN {name} NUMERIC DEFAULT 0")
+                            wnames.add(name)
+                        except Exception:
+                            pass
+                for col in ["partner_balance", "driver_balance", "trip_pool"]:
+                    add_wallet_col(col)
                 # Ensure new user profile columns exist
                 ucols = conn.exec_driver_sql("PRAGMA table_info('user')").fetchall()
                 unames = {c[1] for c in ucols}
