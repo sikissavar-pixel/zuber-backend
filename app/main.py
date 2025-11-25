@@ -8,7 +8,8 @@ from .database import init_db, engine
 from sqlmodel import Session
 from .models.booking_message import BookingMessage
 from .models.reservation import Reservation, ReservationRead
-from .routers import users, reservations, payments, vehicles, partners, applications, partner_approval, bookings, wallet, admin_config, driver_portal, admin_tools, admin_panel, admin_manage
+from app.routes import wallet
+from .routers import users, reservations, payments, vehicles, partners, applications, partner_approval, bookings, wallet as legacy_wallet, admin_config, driver_portal, admin_tools, admin_panel, admin_manage
 from .socket import sio
 
 # FastAPI app
@@ -45,6 +46,7 @@ app.include_router(users.router)
 app.include_router(reservations.router)
 app.include_router(bookings.router)
 app.include_router(wallet.router, prefix="/api/wallet", tags=["Wallet"])
+app.include_router(legacy_wallet.router, prefix="/api/wallet", tags=["wallet"])
 app.include_router(payments.router)
 app.include_router(vehicles.router)
 app.include_router(partners.router)
