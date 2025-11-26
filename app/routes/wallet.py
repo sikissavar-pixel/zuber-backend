@@ -6,6 +6,7 @@ from ..models import Wallet, User
 router = APIRouter()
 
 @router.patch("/add-test-balance")
+@router.post("/add-test-balance")
 async def add_test_balance(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -15,7 +16,7 @@ async def add_test_balance(
     if not wallet:
         raise HTTPException(status_code=404, detail="Wallet not found")
 
-    wallet.partner_balance += 500
+    wallet.partner_balance = (wallet.partner_balance or 0) + 500
     db.commit()
     db.refresh(wallet)
 
