@@ -3,8 +3,9 @@
 builder = "DOCKERFILE"
 
 [deploy]
-# Dockerfile CMD will be used: sh -c "uvicorn app.main:sio_app --host 0.0.0.0 --port ${PORT:-8000}"
+# Dockerfile CMD will be used: sh -c "uvicorn app.main:socket_app --host 0.0.0.0 --port ${PORT:-8000}"
 # Do NOT override with startCommand - it breaks PORT env expansion
+# NOTE: Railway'de WebSocket desteği için HTTP Service kullanın ve TCP Proxy'yi kapalı tutun.
 healthcheckPath = "/health"
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"

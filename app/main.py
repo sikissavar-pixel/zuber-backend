@@ -64,8 +64,9 @@ if os.path.exists(static_dir):
 # Socket.IO ASGI app uses the shared server from app/socket.py
 # Wrap the top-level ASGI app with CORS so that all responses
 # (including redirects and non-API routes) carry CORS headers.
-sio_app = CORSMiddleware(
-    _socketio.ASGIApp(sio, other_asgi_app=app),
+socket_app = _socketio.ASGIApp(sio, app)
+socket_app = CORSMiddleware(
+    socket_app,
     allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
@@ -74,18 +75,18 @@ sio_app = CORSMiddleware(
 
 @sio.event
 async def connect(sid, environ):
-    print("socket connected", sid)
+    print("Socket bağlantısı kuruldu", sid)
 
 @sio.event
 async def disconnect(sid):
-    print("socket disconnected", sid)
+    print("Socket bağlantısı kapandı", sid)
 
 @sio.event
 async def driver_location_update(sid, data):
     # Broadcast to all watchers (e.g., admin map) with the same event name
     await sio.emit("driver_location_update", data)
 
-# The ASGI app to run with uvicorn is `sio_app`
+# The ASGI app to run with uvicorn is `socket_app`
 
 # --- Chat & Booking update events ---
 @sio.event
