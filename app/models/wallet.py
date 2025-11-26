@@ -9,6 +9,9 @@ class Wallet(SQLModel, table=True):
     user_id: int
     available_balance: Decimal = Field(default=Decimal("0.00"))
     blocked_balance: Decimal = Field(default=Decimal("0.00"))
+    partner_balance: Decimal = Field(default=Decimal("0.00"))
+    driver_balance: Decimal = Field(default=Decimal("0.00"))
+    trip_pool: Decimal = Field(default=Decimal("0.00"))
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 

@@ -6,6 +6,7 @@ import authRoutes from "./routes/auth.routes.js";
 import applyRoutes from "./routes/apply.routes.js";
 import bidsRouter from "./routes/bids.js";
 import adminRouter from "./routes/admin.js";
+import walletRouter from "./routes/wallet.js";
 
 dotenv.config();
 
@@ -23,5 +24,6 @@ app.use("/api", authRoutes);
 app.use("/api", applyRoutes);
 app.use("/api/bids", bidsRouter);
 app.use("/api/admin", adminRouter);
+app.use("/api/wallet", walletRouter);
 
 export default app;

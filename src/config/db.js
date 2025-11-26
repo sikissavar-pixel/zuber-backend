@@ -34,6 +34,9 @@ export async function initDb() {
   await pool.query(
     "CREATE TABLE IF NOT EXISTS partner_applications (id SERIAL PRIMARY KEY, name VARCHAR(255) NOT NULL, phone VARCHAR(64), car_model VARCHAR(64), description TEXT, status VARCHAR(32) DEFAULT 'pending', created_at TIMESTAMP DEFAULT NOW())"
   );
+  await pool.query(
+    "CREATE TABLE IF NOT EXISTS wallets (id SERIAL PRIMARY KEY, user_id INTEGER UNIQUE NOT NULL REFERENCES users(id), balance INTEGER NOT NULL DEFAULT 0)"
+  );
 }
 
 export async function ensureAdmin() {

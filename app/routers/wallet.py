@@ -2,14 +2,14 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select, SQLModel
 from ..database import get_session
-from ..auth import get_current_user, require_role
+from ..auth import get_current_user
 from ..models.user import User
 from ..models.wallet import Wallet, WalletTransaction, WalletSummary
 from ..models.reservation import Reservation
 import os
 from datetime import datetime
 
-router = APIRouter(prefix="/api/wallet", tags=["wallet"])
+router = APIRouter(tags=["Wallet"])
 
 
 def _get_or_create_wallet(session: Session, user_id: int) -> Wallet:
@@ -131,6 +131,23 @@ def topup_wallet(
 @router.post("/deposit")
 def deposit_alias(payload: TopupPayload, session: Session = Depends(get_session), current_user: User = Depends(get_current_user)):
     return topup_wallet(payload, session, current_user)
+
+
+@router.patch("/add-test-balance")
+async def add_test_balance(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    wallet = db.query(Wallet).filter(Wallet.user_id == current_user.id).first()
+    if not wallet:
+        raise HTTPException(status_code=404, detail="Wallet not found")
+
+    wallet.partner_balance = (wallet.partner_balance or Decimal("0.00")) + Decimal("500")
+    db.add(wallet)
+    db.commit()
+    db.refresh(wallet)
+
+    return {"message": "Balance added", "new_balance": wallet.partner_balance}
 
 
 class BlockPayload(SQLModel):
