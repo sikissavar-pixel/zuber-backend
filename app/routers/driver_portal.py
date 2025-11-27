@@ -224,6 +224,7 @@ def upsert_location(
     }
     try:
         sio.start_background_task(asyncio.run, sio.emit("driver_location_update", broadcast_payload))
+        sio.start_background_task(asyncio.run, sio.emit("driver:location:update", broadcast_payload))
     except Exception:
         pass
     return serialized

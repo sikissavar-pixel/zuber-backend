@@ -49,9 +49,12 @@ def create_reservation(
     session.refresh(r)
 
     # Broadcast creation
-    background_tasks.add_task(sio.emit, "reservation_created", ReservationRead.model_validate(r).model_dump())
+    payload = ReservationRead.model_validate(r).model_dump()
+    background_tasks.add_task(sio.emit, "reservation_created", payload)
+    background_tasks.add_task(sio.emit, "reservation:new", payload)
     if r.driver_id:
-        background_tasks.add_task(sio.emit, "reservation_assigned", ReservationRead.model_validate(r).model_dump())
+        background_tasks.add_task(sio.emit, "reservation_assigned", payload)
+        background_tasks.add_task(sio.emit, "reservation:accepted", payload)
 
     return ReservationRead.model_validate(r)
 
@@ -112,7 +115,13 @@ def update_status(
     session.commit()
     session.refresh(r)
 
-    background_tasks.add_task(sio.emit, "reservation_updated", ReservationRead.model_validate(r).model_dump())
+    payload = ReservationRead.model_validate(r).model_dump()
+    background_tasks.add_task(sio.emit, "reservation_updated", payload)
+    if r.status == "cancelled":
+        background_tasks.add_task(sio.emit, "reservation_cancelled", payload)
+        background_tasks.add_task(sio.emit, "reservation:cancel", payload)
+    elif r.status == "assigned" and r.driver_id:
+        background_tasks.add_task(sio.emit, "reservation:accepted", payload)
 
     return ReservationRead.model_validate(r)
 
@@ -142,7 +151,9 @@ def assign_driver(
     session.commit()
     session.refresh(r)
 
-    background_tasks.add_task(sio.emit, "reservation_assigned", ReservationRead.model_validate(r).model_dump())
-    background_tasks.add_task(sio.emit, "reservation_updated", ReservationRead.model_validate(r).model_dump())
+    payload = ReservationRead.model_validate(r).model_dump()
+    background_tasks.add_task(sio.emit, "reservation_assigned", payload)
+    background_tasks.add_task(sio.emit, "reservation_updated", payload)
+    background_tasks.add_task(sio.emit, "reservation:accepted", payload)
 
     return ReservationRead.model_validate(r)
