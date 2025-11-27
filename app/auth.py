@@ -39,7 +39,10 @@ async def get_current_user(token: str = Depends(oauth2_scheme), session: Session
             raise credentials_exception
     except jwt.PyJWTError:
         raise credentials_exception
-    user = session.get(User, user_id)
+    try:
+        user = session.get(User, user_id)
+    except Exception:
+        raise credentials_exception
     if not user:
         raise credentials_exception
     return user

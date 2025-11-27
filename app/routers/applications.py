@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlmodel import Session, select
-from typing import List
+from typing import List, Optional
 
 from ..database import get_session
 from ..auth import require_role
@@ -43,16 +43,53 @@ async def apply_driver(payload: DriverPending, session: Session = Depends(get_se
     return payload
 
 
+def _resolve_status_filter(status: Optional[str]) -> Optional[str]:
+    if status is None or status == "":
+        return "pending"
+    status = status.lower()
+    if status == "all":
+        return None
+    allowed = {"pending", "approved", "rejected"}
+    if status not in allowed:
+        raise HTTPException(status_code=400, detail="Invalid status")
+    return status
+
+
+def _update_user_flags(session: Session, email: str, *, is_active: bool, is_approved: bool):
+    user = session.exec(select(User).where(User.email == email)).first()
+    if not user:
+        return
+    if hasattr(user, "is_active"):
+        setattr(user, "is_active", is_active)
+    if hasattr(user, "is_approved"):
+        setattr(user, "is_approved", is_approved)
+    session.add(user)
+
+
 # Admin-only listing endpoints
 @router.get("/applications/partners", response_model=List[PartnerPending], dependencies=[Depends(require_role("admin"))])
-def list_partner_applications(session: Session = Depends(get_session)):
-    apps = session.exec(select(PartnerPending).where(PartnerPending.status == "pending")).all()
+def list_partner_applications(
+    status: Optional[str] = Query(default="pending"),
+    session: Session = Depends(get_session),
+):
+    status_filter = _resolve_status_filter(status)
+    stmt = select(PartnerPending)
+    if status_filter:
+        stmt = stmt.where(PartnerPending.status == status_filter)
+    apps = session.exec(stmt.order_by(PartnerPending.id.desc())).all()
     return apps
 
 
 @router.get("/applications/drivers", response_model=List[DriverPending], dependencies=[Depends(require_role("admin"))])
-def list_driver_applications(session: Session = Depends(get_session)):
-    apps = session.exec(select(DriverPending).where(DriverPending.status == "pending")).all()
+def list_driver_applications(
+    status: Optional[str] = Query(default="pending"),
+    session: Session = Depends(get_session),
+):
+    status_filter = _resolve_status_filter(status)
+    stmt = select(DriverPending)
+    if status_filter:
+        stmt = stmt.where(DriverPending.status == status_filter)
+    apps = session.exec(stmt.order_by(DriverPending.id.desc())).all()
     return apps
 
 
@@ -97,9 +134,9 @@ def approve_partner(app_id: int, session: Session = Depends(get_session)):
     session.flush()
     try:
         send_approval_email(safe_full_name, app.contact_email, temp_password)
-    except MailerError:
+    except MailerError as exc:
         session.rollback()
-        raise HTTPException(status_code=502, detail="Mail gönderilemedi, onay işlemi iptal edildi.")
+        raise HTTPException(status_code=502, detail=f"Mail gönderilemedi: {exc}")
 
     session.commit()
 
@@ -153,9 +190,9 @@ def approve_partner_patch(app_id: int, session: Session = Depends(get_session)):
     session.flush()
     try:
         send_approval_email(safe_full_name, app.contact_email, temp_password)
-    except MailerError:
+    except MailerError as exc:
         session.rollback()
-        raise HTTPException(status_code=502, detail="Mail gönderilemedi, onay işlemi iptal edildi.")
+        raise HTTPException(status_code=502, detail=f"Mail gönderilemedi: {exc}")
 
     session.commit()
     try:
@@ -173,6 +210,12 @@ def reject_partner(app_id: int, session: Session = Depends(get_session)):
         raise HTTPException(status_code=404, detail="Application not found or not pending")
     app.status = "rejected"
     session.add(app)
+    partner = session.exec(select(Partner).where(Partner.contact_email == app.contact_email)).first()
+    if partner:
+        partner.active = False
+        partner.approved = False
+        session.add(partner)
+    _update_user_flags(session, app.contact_email, is_active=False, is_approved=False)
     session.commit()
     try:
         sio.start_background_task(asyncio.run, sio.emit("application_updated", {"type": "partner", "application_id": app_id, "status": "rejected"}, to="admin_room"))
@@ -198,9 +241,9 @@ def approve_driver(app_id: int, session: Session = Depends(get_session)):
     session.flush()
     try:
         send_approval_email(app.full_name, app.email, temp_password)
-    except MailerError:
+    except MailerError as exc:
         session.rollback()
-        raise HTTPException(status_code=502, detail="Mail gönderilemedi, onay işlemi iptal edildi.")
+        raise HTTPException(status_code=502, detail=f"Mail gönderilemedi: {exc}")
     session.commit()
     try:
         sio.start_background_task(asyncio.run, sio.emit("application_approved", {"type": "driver", "application_id": app_id, "user_id": user.id}, to="admin_room"))
@@ -217,6 +260,7 @@ def reject_driver(app_id: int, session: Session = Depends(get_session)):
         raise HTTPException(status_code=404, detail="Application not found or not pending")
     app.status = "rejected"
     session.add(app)
+    _update_user_flags(session, app.email, is_active=False, is_approved=False)
     session.commit()
     try:
         sio.start_background_task(asyncio.run, sio.emit("application_updated", {"type": "driver", "application_id": app_id, "status": "rejected"}, to="admin_room"))
