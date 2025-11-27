@@ -130,6 +130,9 @@ async def apply_partner(
     if existing_tax and existing_tax.status == "pending":
         raise HTTPException(status_code=409, detail="Application with this tax number already exists")
     
+    if not payload.company_documents_image_url:
+        raise HTTPException(status_code=400, detail="Company documents image is required")
+    
     app = PartnerPending(
         company_name=payload.company_name,
         tax_office=payload.tax_office,
@@ -143,6 +146,8 @@ async def apply_partner(
         fleet_type=payload.fleet_type,
         kvkk_consent=payload.kvkk_consent,
         commercial_contract_approved=payload.commercial_contract_approved,
+        company_documents_image_url=payload.company_documents_image_url,
+        document_status="pending",
         status="pending"
     )
     session.add(app)
@@ -233,6 +238,11 @@ async def apply_driver(
     if existing_plate and existing_plate.status == "pending":
         raise HTTPException(status_code=409, detail="Application with this plate number already exists")
     
+    if not payload.driver_license_image_url:
+        raise HTTPException(status_code=400, detail="Driver license image is required")
+    if not payload.vehicle_registration_image_url:
+        raise HTTPException(status_code=400, detail="Vehicle registration image is required")
+    
     app = DriverPending(
         full_name=payload.full_name,
         tc_no_encrypted=encrypted_tc,
@@ -250,6 +260,9 @@ async def apply_driver(
         vehicle_year=payload.vehicle_year,
         plate_number=payload.plate_number.upper(),
         fuel_type=payload.fuel_type,
+        driver_license_image_url=payload.driver_license_image_url,
+        vehicle_registration_image_url=payload.vehicle_registration_image_url,
+        document_status="pending",
         status="pending"
     )
     session.add(app)
@@ -308,6 +321,9 @@ def _partner_app_to_read(app: PartnerPending) -> PartnerApplicationRead:
         fleet_type=app.fleet_type,
         kvkk_consent=app.kvkk_consent,
         commercial_contract_approved=app.commercial_contract_approved,
+        company_documents_image_url=getattr(app, "company_documents_image_url", None),
+        document_status=getattr(app, "document_status", "pending"),
+        missing_document_note=getattr(app, "missing_document_note", None),
         status=app.status,
         reject_reason=app.reject_reason,
         rejected_at=app.rejected_at,
@@ -340,6 +356,10 @@ def _driver_app_to_read(app: DriverPending) -> DriverApplicationRead:
         vehicle_year=app.vehicle_year,
         plate_number=app.plate_number,
         fuel_type=app.fuel_type,
+        driver_license_image_url=getattr(app, "driver_license_image_url", None),
+        vehicle_registration_image_url=getattr(app, "vehicle_registration_image_url", None),
+        document_status=getattr(app, "document_status", "pending"),
+        missing_document_note=getattr(app, "missing_document_note", None),
         status=app.status,
         reject_reason=app.reject_reason,
         rejected_at=app.rejected_at,

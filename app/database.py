@@ -79,6 +79,10 @@ def init_db():
                     ("vehicle_model", "TEXT"),
                     ("vehicle_year", "INTEGER"),
                     ("fuel_type", "TEXT"),
+                    ("driver_license_image_url", "TEXT"),
+                    ("vehicle_registration_image_url", "TEXT"),
+                    ("document_status", "TEXT"),
+                    ("missing_document_note", "TEXT"),
                     ("reject_reason", "TEXT"),
                     ("rejected_at", "TEXT"),
                 ]:
@@ -101,6 +105,9 @@ def init_db():
                     ("fleet_type", "TEXT"),
                     ("kvkk_consent", "INTEGER"),
                     ("commercial_contract_approved", "INTEGER"),
+                    ("company_documents_image_url", "TEXT"),
+                    ("document_status", "TEXT"),
+                    ("missing_document_note", "TEXT"),
                     ("reject_reason", "TEXT"),
                     ("rejected_at", "TEXT"),
                 ]:

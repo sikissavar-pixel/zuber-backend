@@ -17,6 +17,9 @@ class PartnerPending(SQLModel, table=True):
     fleet_type: str
     kvkk_consent: bool
     commercial_contract_approved: bool
+    company_documents_image_url: Optional[str] = None
+    document_status: str = Field(default="pending")
+    missing_document_note: Optional[str] = None
     status: str = Field(default="pending", index=True)
     reject_reason: Optional[str] = None
     rejected_at: Optional[datetime] = None
@@ -41,6 +44,10 @@ class DriverPending(SQLModel, table=True):
     vehicle_year: int
     plate_number: str = Field(index=True)
     fuel_type: str
+    driver_license_image_url: Optional[str] = None
+    vehicle_registration_image_url: Optional[str] = None
+    document_status: str = Field(default="pending")
+    missing_document_note: Optional[str] = None
     status: str = Field(default="pending", index=True)
     reject_reason: Optional[str] = None
     rejected_at: Optional[datetime] = None
@@ -60,6 +67,7 @@ class PartnerApplyRequest(SQLModel):
     fleet_type: str
     kvkk_consent: bool
     commercial_contract_approved: bool
+    company_documents_image_url: str
 
 
 class DriverApplyRequest(SQLModel):
@@ -79,6 +87,8 @@ class DriverApplyRequest(SQLModel):
     vehicle_year: int
     plate_number: str
     fuel_type: str
+    driver_license_image_url: str
+    vehicle_registration_image_url: str
 
 
 class PartnerApplicationRead(SQLModel):
@@ -95,6 +105,9 @@ class PartnerApplicationRead(SQLModel):
     fleet_type: str
     kvkk_consent: bool
     commercial_contract_approved: bool
+    company_documents_image_url: Optional[str] = None
+    document_status: str
+    missing_document_note: Optional[str] = None
     status: str
     reject_reason: Optional[str] = None
     rejected_at: Optional[datetime] = None
@@ -119,6 +132,10 @@ class DriverApplicationRead(SQLModel):
     vehicle_year: int
     plate_number: str
     fuel_type: str
+    driver_license_image_url: Optional[str] = None
+    vehicle_registration_image_url: Optional[str] = None
+    document_status: str
+    missing_document_note: Optional[str] = None
     status: str
     reject_reason: Optional[str] = None
     rejected_at: Optional[datetime] = None
