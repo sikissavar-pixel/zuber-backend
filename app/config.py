@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     GOOGLE_PLAY_PACKAGE_NAME: str = ""
     GOOGLE_SERVICE_ACCOUNT_JSON_PATH: str = ""
     SYSTEM_FEE_PERCENT: float = 0.10
+    GOOGLE_MAPS_API_KEY: str = ""
+    GOOGLE_MAPS_SERVER_KEY: str = ""
 
     class Config:
         env_file = ".env"

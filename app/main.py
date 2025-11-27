@@ -8,7 +8,7 @@ from .database import init_db, engine
 from sqlmodel import Session
 from .models.booking_message import BookingMessage
 from .models.reservation import Reservation, ReservationRead
-from .routers import users, reservations, payments, vehicles, partners, applications, partner_approval, bookings, wallet, admin_config, driver_portal, admin_tools, admin_panel, admin_manage
+from .routers import users, reservations, payments, vehicles, partners, applications, partner_approval, bookings, wallet, admin_config, driver_portal, admin_tools, admin_panel, admin_manage, maps
 from .socket import sio
 
 # FastAPI app
@@ -55,6 +55,7 @@ app.include_router(driver_portal.router)
 app.include_router(admin_tools.router)
 app.include_router(admin_panel.router)
 app.include_router(admin_manage.router)
+app.include_router(maps.router)
 
 # Serve static files (uploads) - only if directory exists
 static_dir = os.path.join(os.path.dirname(__file__), "static")

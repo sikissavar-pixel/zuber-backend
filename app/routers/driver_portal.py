@@ -7,6 +7,7 @@ from ..models.user import User
 from ..models.reservation import Reservation, ReservationRead
 from ..models.wallet import Wallet, WalletTransaction
 from ..models.feedback import Feedback, FeedbackCreate
+from ..models.driver_location import DriverLocation, DriverLocationRead
 from ..socket import sio
 import asyncio
 from datetime import datetime
@@ -26,6 +27,14 @@ def _get_or_create_wallet(session: Session, user_id: int) -> Wallet:
 
 class QRVerifyPayload(SQLModel):
     reservation_id: int
+
+
+class DriverLocationPayload(SQLModel):
+    latitude: float
+    longitude: float
+    heading: float | None = None
+    speed: float | None = None
+    accuracy: float | None = None
 
 
 @router.get("/reservations", response_model=list[ReservationRead])
@@ -163,3 +172,53 @@ def get_earnings(
     ]
     total = sum(m["amount"] for m in monthly)
     return {"total": total, "monthly": monthly}
+
+
+@router.post("/location", response_model=DriverLocationRead)
+def upsert_location(
+    payload: DriverLocationPayload,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != "driver":
+        raise HTTPException(status_code=403, detail="Sadece sürücüler konum paylaşabilir")
+
+    location = session.exec(select(DriverLocation).where(DriverLocation.driver_id == current_user.id)).first()
+    if not location:
+        location = DriverLocation(driver_id=current_user.id, latitude=payload.latitude, longitude=payload.longitude)
+    location.latitude = payload.latitude
+    location.longitude = payload.longitude
+    location.heading = payload.heading
+    location.speed = payload.speed
+    location.accuracy = payload.accuracy
+    location.updated_at = datetime.utcnow()
+    session.add(location)
+    session.commit()
+    session.refresh(location)
+
+    serialized = DriverLocationRead.model_validate(location).model_dump()
+    broadcast_payload = {
+        **serialized,
+        "driverId": serialized["driver_id"],
+        "lat": serialized["latitude"],
+        "lng": serialized["longitude"],
+        "updatedAt": serialized["updated_at"].isoformat(),
+    }
+    try:
+        sio.start_background_task(asyncio.run, sio.emit("driver_location_update", broadcast_payload))
+    except Exception:
+        pass
+    return serialized
+
+
+@router.get("/location/me", response_model=DriverLocationRead)
+def get_my_location(
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != "driver":
+        raise HTTPException(status_code=403, detail="Sadece sürücüler bu veriye erişebilir")
+    location = session.exec(select(DriverLocation).where(DriverLocation.driver_id == current_user.id)).first()
+    if not location:
+        raise HTTPException(status_code=404, detail="Konum bulunamadı")
+    return location

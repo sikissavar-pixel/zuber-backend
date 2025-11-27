@@ -14,6 +14,7 @@ def init_db():
     from .models.booking_message import BookingMessage
     from .models.wallet import Wallet, WalletTransaction
     from .models.feedback import Feedback
+    from .models.driver_location import DriverLocation
     SQLModel.metadata.create_all(engine)
 
     # Lightweight migration for SQLite: ensure new payment columns exist on reservation table
