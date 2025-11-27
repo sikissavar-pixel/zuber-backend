@@ -250,7 +250,7 @@ def reject_partner(app_id: int, session: Session = Depends(get_session)):
     _update_user_flags(session, app.contact_email, is_active=False, is_approved=False)
     session.commit()
     try:
-        sio.start_background_task(asyncio.run, sio.emit("application_updated", {"type": "partner", "application_id": app_id, "status": "rejected"}, to="admin_room"))
+        sio.start_background_task(asyncio.run, sio.emit("application_updated", {"type": "partner", "application_id": app_id, "status": STATUS_REJECTED}, to="admin_room"))
     except Exception:
         pass
     return {"status": "rejected"}
@@ -303,7 +303,7 @@ def reject_driver(app_id: int, session: Session = Depends(get_session)):
     _update_user_flags(session, app.email, is_active=False, is_approved=False)
     session.commit()
     try:
-        sio.start_background_task(asyncio.run, sio.emit("application_updated", {"type": "driver", "application_id": app_id, "status": "rejected"}, to="admin_room"))
+        sio.start_background_task(asyncio.run, sio.emit("application_updated", {"type": "driver", "application_id": app_id, "status": STATUS_REJECTED}, to="admin_room"))
     except Exception:
         pass
     return {"status": "rejected"}
