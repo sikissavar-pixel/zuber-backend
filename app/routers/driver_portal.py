@@ -63,9 +63,10 @@ def open_reservations(
 ):
     if current_user.role != "driver":
         raise HTTPException(status_code=403, detail="Sadece sürücüler erişebilir")
+    allowed_statuses = ("pending", "open_bid")
     rows = session.exec(
         select(Reservation)
-        .where(Reservation.status == "pending")
+        .where(Reservation.status.in_(allowed_statuses))
         .where(or_(Reservation.driver_id.is_(None), Reservation.driver_id == current_user.id))
         .order_by(Reservation.pickup_time)
     ).all()
