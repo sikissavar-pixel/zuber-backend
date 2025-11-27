@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import JSONResponse
 from sqlmodel import Session, select
 from typing import List, Optional
+import logging
 
 from ..database import get_session
 from ..auth import require_role
@@ -13,6 +15,7 @@ from ..services.approval import ensure_user, activate_user_flags, send_approval_
 
 
 router = APIRouter(prefix="/api", tags=["applications"])
+logger = logging.getLogger(__name__)
 
 
 # Public apply endpoints
@@ -136,7 +139,11 @@ def approve_partner(app_id: int, session: Session = Depends(get_session)):
         send_approval_email(safe_full_name, app.contact_email, temp_password)
     except MailerError as exc:
         session.rollback()
-        raise HTTPException(status_code=502, detail=f"Mail gönderilemedi: {exc}")
+        logger.error("MAIL_FAILED %s", exc)
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "error": "MAIL_FAILED", "details": str(exc)},
+        )
 
     session.commit()
 
@@ -146,7 +153,7 @@ def approve_partner(app_id: int, session: Session = Depends(get_session)):
     except Exception:
         pass
 
-    return {"status": "ok", "email_sent": True, "message": "Şifre kullanıcıya mail olarak gönderildi."}
+    return {"success": True}
 
 
 # Alias with PATCH method to support clients expecting PATCH
@@ -192,7 +199,11 @@ def approve_partner_patch(app_id: int, session: Session = Depends(get_session)):
         send_approval_email(safe_full_name, app.contact_email, temp_password)
     except MailerError as exc:
         session.rollback()
-        raise HTTPException(status_code=502, detail=f"Mail gönderilemedi: {exc}")
+        logger.error("MAIL_FAILED %s", exc)
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "error": "MAIL_FAILED", "details": str(exc)},
+        )
 
     session.commit()
     try:
@@ -200,7 +211,7 @@ def approve_partner_patch(app_id: int, session: Session = Depends(get_session)):
         sio.start_background_task(asyncio.run, sio.emit("partners_updated", {"partner_id": partner.id}))
     except Exception:
         pass
-    return {"status": "ok", "email_sent": True, "message": "Şifre kullanıcıya mail olarak gönderildi."}
+    return {"success": True}
 
 
 @router.post("/applications/partners/{app_id}/reject", dependencies=[Depends(require_role("admin"))])
@@ -243,14 +254,18 @@ def approve_driver(app_id: int, session: Session = Depends(get_session)):
         send_approval_email(app.full_name, app.email, temp_password)
     except MailerError as exc:
         session.rollback()
-        raise HTTPException(status_code=502, detail=f"Mail gönderilemedi: {exc}")
+        logger.error("MAIL_FAILED %s", exc)
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "error": "MAIL_FAILED", "details": str(exc)},
+        )
     session.commit()
     try:
         sio.start_background_task(asyncio.run, sio.emit("application_approved", {"type": "driver", "application_id": app_id, "user_id": user.id}, to="admin_room"))
         sio.start_background_task(asyncio.run, sio.emit("drivers_updated", {"user_id": user.id}))
     except Exception:
         pass
-    return {"status": "ok", "email_sent": True, "message": "Şifre kullanıcıya mail olarak gönderildi."}
+    return {"success": True}
 
 
 @router.post("/applications/drivers/{app_id}/reject", dependencies=[Depends(require_role("admin"))])
