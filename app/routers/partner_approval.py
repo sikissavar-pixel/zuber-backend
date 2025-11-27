@@ -1,24 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
-import string
-import secrets
 
 from ..database import get_session
-from ..auth import get_password_hash, require_role
+from ..auth import require_role
 from ..models.partner import Partner
-from ..models.user import User
+from ..services.approval import ensure_user, activate_user_flags, send_approval_email, MailerError
 
 router = APIRouter(prefix="/partners", tags=["partners"])
 
-def generate_password(length: int = 10) -> str:
-    """Generate a secure random password with at least 10 chars, mixed case and digits."""
-    alphabet = string.ascii_letters + string.digits
-    while True:
-        password = "".join(secrets.choice(alphabet) for _ in range(length))
-        if (any(c.islower() for c in password) 
-            and any(c.isupper() for c in password) 
-            and any(c.isdigit() for c in password)):
-            return password
 
 @router.patch("/{partner_id}/approve", dependencies=[Depends(require_role("admin"))])
 def approve_partner(partner_id: int, session: Session = Depends(get_session)):
@@ -26,50 +15,26 @@ def approve_partner(partner_id: int, session: Session = Depends(get_session)):
     if not partner:
         raise HTTPException(status_code=404, detail="Partner bulunamadı")
 
-    # If already approved, just return status (idempotency)
     if getattr(partner, "approved", False):
-        return {
-            "status": "ok",
-            "message": "Partner zaten onaylanmış",
-            "email": partner.contact_email
-        }
+        return {"status": "ok", "email_sent": False, "message": "Partner zaten onaylanmış"}
 
-    # Generate secure password
-    raw_password = generate_password()
-    hashed = get_password_hash(raw_password)
+    safe_name = partner.name or "Partner"
+    user, raw_password = ensure_user(session, partner.contact_email, safe_name, "partner")
+    activate_user_flags(user)
+    user.full_name = user.full_name or safe_name
+    user.contact_phone = user.contact_phone or partner.contact_phone
+    session.add(user)
 
-    # Check if user exists
-    user = session.exec(select(User).where(User.email == partner.contact_email)).first()
-    
-    if user:
-        # Update existing user
-        user.password_hash = hashed
-        user.role = "partner"
-        # Ensure force password change is set if the field exists
-        if hasattr(user, "must_change_password"):
-            user.must_change_password = True
-        session.add(user)
-    else:
-        # Create new user
-        user = User(
-            full_name=partner.name,
-            email=partner.contact_email,
-            role="partner",
-            password_hash=hashed,
-            must_change_password=True
-        )
-        session.add(user)
-
-    # Approve partner
+    partner.active = True
     partner.approved = True
     session.add(partner)
-    
-    session.commit()
-    session.refresh(partner)
-    # session.refresh(user)
 
-    return {
-        "status": "ok",
-        "email": partner.contact_email,
-        "password": raw_password
-    }
+    session.flush()
+    try:
+        send_approval_email(safe_name, partner.contact_email, raw_password)
+    except MailerError:
+        session.rollback()
+        raise HTTPException(status_code=502, detail="Mail gönderilemedi, onay işlemi iptal edildi.")
+
+    session.commit()
+    return {"status": "ok", "email_sent": True, "message": "Şifre kullanıcıya mail olarak gönderildi."}

@@ -3,14 +3,13 @@ from sqlmodel import Session, select
 from typing import List
 
 from ..database import get_session
-from ..auth import require_role, get_password_hash
+from ..auth import require_role
 from ..models.applications import PartnerPending, DriverPending
 from ..models.partner import Partner
 from ..models.user import User
 from ..socket import sio
 import asyncio
-import random
-import string
+from ..services.approval import ensure_user, activate_user_flags, send_approval_email, MailerError
 
 
 router = APIRouter(prefix="/api", tags=["applications"])
@@ -64,16 +63,10 @@ def approve_partner(app_id: int, session: Session = Depends(get_session)):
     if not app or app.status != "pending":
         raise HTTPException(status_code=404, detail="Application not found or not pending")
 
-    # Create or update Partner as approved (idempotent)
     partner = session.exec(select(Partner).where(Partner.contact_email == app.contact_email)).first()
     if partner:
         partner.name = partner.name or app.name
         partner.contact_phone = partner.contact_phone or app.contact_phone
-        partner.active = True
-        partner.approved = True
-        session.add(partner)
-        session.commit()
-        session.refresh(partner)
     else:
         partner = Partner(
             name=app.name,
@@ -82,53 +75,41 @@ def approve_partner(app_id: int, session: Session = Depends(get_session)):
             active=True,
             approved=True,
         )
-        session.add(partner)
-        session.commit()
-        session.refresh(partner)
+    partner.active = True
+    partner.approved = True
+    session.add(partner)
 
-    # Create user for partner (role=partner) with a secure temporary password
     safe_full_name = app.contact_full_name or app.name or "Partner"
-    temp_password = generate_temp_password(10)
-    # Create or update user account for this partner
-    user = session.exec(select(User).where(User.email == app.contact_email)).first()
-    if user:
-        user.full_name = user.full_name or safe_full_name
-        user.role = "partner"
-        user.password_hash = get_password_hash(temp_password)
-        try:
-            setattr(user, "must_change_password", True)
-        except Exception:
-            pass
-        session.add(user)
-    else:
-        user = User(
-            full_name=safe_full_name,
-            email=app.contact_email,
-            role="partner",
-            password_hash=get_password_hash(temp_password),
-            must_change_password=True,
-        )
-        session.add(user)
+    user, temp_password = ensure_user(session, app.contact_email, safe_full_name, "partner")
+    activate_user_flags(user)
+    user.full_name = user.full_name or safe_full_name
+    user.contact_phone = user.contact_phone or app.contact_phone
+    session.add(user)
+
     app.status = "approved"
     session.add(app)
-    session.commit()
-    session.refresh(user)
-    # Ensure any duplicate pending applications for same email are marked approved
-    dups = session.exec(select(PartnerPending).where(PartnerPending.contact_email == app.contact_email, PartnerPending.status == "pending")).all()
-    if dups:
-        for d in dups:
-            d.status = "approved"
-            session.add(d)
-        session.commit()
-    # Return temporary password for admin to show once
-    # Notify admin and partner client UIs
+
+    dups = session.exec(select(PartnerPending).where(PartnerPending.contact_email == app.contact_email, PartnerPending.status == "pending", PartnerPending.id != app_id)).all()
+    for dup in dups:
+        dup.status = "approved"
+        session.add(dup)
+
+    session.flush()
     try:
-        # run emits in background from sync handler
+        send_approval_email(safe_full_name, app.contact_email, temp_password)
+    except MailerError:
+        session.rollback()
+        raise HTTPException(status_code=502, detail="Mail gönderilemedi, onay işlemi iptal edildi.")
+
+    session.commit()
+
+    try:
         sio.start_background_task(asyncio.run, sio.emit("application_approved", {"type": "partner", "application_id": app_id, "user_id": user.id}, to="admin_room"))
         sio.start_background_task(asyncio.run, sio.emit("partners_updated", {"partner_id": partner.id}))
     except Exception:
         pass
-    return {"partner_id": partner.id, "user_id": user.id, "temporary_password": temp_password}
+
+    return {"status": "ok", "email_sent": True, "message": "Şifre kullanıcıya mail olarak gönderildi."}
 
 
 # Alias with PATCH method to support clients expecting PATCH
@@ -138,16 +119,10 @@ def approve_partner_patch(app_id: int, session: Session = Depends(get_session)):
     if not app or app.status != "pending":
         raise HTTPException(status_code=404, detail="Application not found or not pending")
 
-    # Create or update Partner as approved (idempotent)
     partner = session.exec(select(Partner).where(Partner.contact_email == app.contact_email)).first()
     if partner:
         partner.name = partner.name or app.name
         partner.contact_phone = partner.contact_phone or app.contact_phone
-        partner.active = True
-        partner.approved = True
-        session.add(partner)
-        session.commit()
-        session.refresh(partner)
     else:
         partner = Partner(
             name=app.name,
@@ -156,50 +131,39 @@ def approve_partner_patch(app_id: int, session: Session = Depends(get_session)):
             active=True,
             approved=True,
         )
-        session.add(partner)
-        session.commit()
-        session.refresh(partner)
+    partner.active = True
+    partner.approved = True
+    session.add(partner)
 
-    # Create user for partner (role=partner) with a secure temporary password
     safe_full_name = app.contact_full_name or app.name or "Partner"
-    temp_password = generate_temp_password(10)
-    # Create or update user account for this partner
-    user = session.exec(select(User).where(User.email == app.contact_email)).first()
-    if user:
-        user.full_name = user.full_name or safe_full_name
-        user.role = "partner"
-        user.password_hash = get_password_hash(temp_password)
-        try:
-            setattr(user, "must_change_password", True)
-        except Exception:
-            pass
-        session.add(user)
-    else:
-        user = User(
-            full_name=safe_full_name,
-            email=app.contact_email,
-            role="partner",
-            password_hash=get_password_hash(temp_password),
-            must_change_password=True,
-        )
-        session.add(user)
+    user, temp_password = ensure_user(session, app.contact_email, safe_full_name, "partner")
+    activate_user_flags(user)
+    user.full_name = user.full_name or safe_full_name
+    user.contact_phone = user.contact_phone or app.contact_phone
+    session.add(user)
+
     app.status = "approved"
     session.add(app)
+
+    dups = session.exec(select(PartnerPending).where(PartnerPending.contact_email == app.contact_email, PartnerPending.status == "pending", PartnerPending.id != app_id)).all()
+    for dup in dups:
+        dup.status = "approved"
+        session.add(dup)
+
+    session.flush()
+    try:
+        send_approval_email(safe_full_name, app.contact_email, temp_password)
+    except MailerError:
+        session.rollback()
+        raise HTTPException(status_code=502, detail="Mail gönderilemedi, onay işlemi iptal edildi.")
+
     session.commit()
-    session.refresh(user)
-    # Ensure any duplicate pending applications for same email are marked approved
-    dups = session.exec(select(PartnerPending).where(PartnerPending.contact_email == app.contact_email, PartnerPending.status == "pending")).all()
-    if dups:
-        for d in dups:
-            d.status = "approved"
-            session.add(d)
-        session.commit()
     try:
         sio.start_background_task(asyncio.run, sio.emit("application_approved", {"type": "partner", "application_id": app_id, "user_id": user.id}, to="admin_room"))
         sio.start_background_task(asyncio.run, sio.emit("partners_updated", {"partner_id": partner.id}))
     except Exception:
         pass
-    return {"partner_id": partner.id, "user_id": user.id, "temporary_password": temp_password}
+    return {"status": "ok", "email_sent": True, "message": "Şifre kullanıcıya mail olarak gönderildi."}
 
 
 @router.post("/applications/partners/{app_id}/reject", dependencies=[Depends(require_role("admin"))])
@@ -223,26 +187,27 @@ def approve_driver(app_id: int, session: Session = Depends(get_session)):
     if not app or app.status != "pending":
         raise HTTPException(status_code=404, detail="Application not found or not pending")
 
-    # Create user for driver (role=driver) with a secure temporary password
-    temp_password = generate_temp_password(10)
-    user = User(
-        full_name=app.full_name,
-        email=app.email,
-        role="driver",
-        password_hash=get_password_hash(temp_password),
-        must_change_password=True,
-    )
+    user, temp_password = ensure_user(session, app.email, app.full_name, "driver")
+    activate_user_flags(user)
+    user.full_name = app.full_name
+    user.contact_phone = app.phone
+    user.vehicle_plate = app.vehicle_plate
     app.status = "approved"
     session.add(user)
     session.add(app)
+    session.flush()
+    try:
+        send_approval_email(app.full_name, app.email, temp_password)
+    except MailerError:
+        session.rollback()
+        raise HTTPException(status_code=502, detail="Mail gönderilemedi, onay işlemi iptal edildi.")
     session.commit()
-    session.refresh(user)
     try:
         sio.start_background_task(asyncio.run, sio.emit("application_approved", {"type": "driver", "application_id": app_id, "user_id": user.id}, to="admin_room"))
         sio.start_background_task(asyncio.run, sio.emit("drivers_updated", {"user_id": user.id}))
     except Exception:
         pass
-    return {"user_id": user.id, "temporary_password": temp_password}
+    return {"status": "ok", "email_sent": True, "message": "Şifre kullanıcıya mail olarak gönderildi."}
 
 
 @router.post("/applications/drivers/{app_id}/reject", dependencies=[Depends(require_role("admin"))])
@@ -258,17 +223,3 @@ def reject_driver(app_id: int, session: Session = Depends(get_session)):
     except Exception:
         pass
     return {"status": "rejected"}
-def generate_temp_password(length: int = 10) -> str:
-    # Ensure at least one uppercase, one digit, one symbol; prefix with Zb-
-    prefix = "Zb-"
-    symbols = "!@#$%^&*?"
-    upper = random.choice(string.ascii_uppercase)
-    digit = random.choice(string.digits)
-    symbol = random.choice(symbols)
-    remaining_len = max(0, length - len(prefix) - 3)
-    pool = string.ascii_letters + string.digits
-    remaining = "".join(random.choice(pool) for _ in range(remaining_len))
-    # Shuffle the components after the prefix
-    tail_list = list(upper + digit + symbol + remaining)
-    random.shuffle(tail_list)
-    return prefix + "".join(tail_list)
