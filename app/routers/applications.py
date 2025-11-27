@@ -378,12 +378,18 @@ def list_partner_applications(
     status: Optional[str] = Query(default="pending"),
     session: Session = Depends(get_session),
 ):
-    status_filter = _resolve_status_filter(status)
-    stmt = select(PartnerPending)
-    if status_filter:
-        stmt = stmt.where(PartnerPending.status == status_filter)
-    apps = session.exec(stmt.order_by(PartnerPending.id.desc())).all()
-    return {"items": [_partner_app_to_read(app).model_dump() for app in apps]}
+    try:
+        status_filter = _resolve_status_filter(status)
+        stmt = select(PartnerPending)
+        if status_filter:
+            stmt = stmt.where(PartnerPending.status == status_filter)
+        apps = session.exec(stmt.order_by(PartnerPending.id.desc())).all()
+        result = {"items": [_partner_app_to_read(app).model_dump() for app in apps]}
+        logger.info(f"List partner applications: status={status_filter}, count={len(result['items'])}")
+        return result
+    except Exception as e:
+        logger.error(f"Error listing partner applications: {e}")
+        return {"items": []}
 
 
 @router.get("/applications/drivers", dependencies=[Depends(require_role("admin"))])
