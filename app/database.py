@@ -5,7 +5,7 @@ from .config import settings
 engine = create_engine(settings.DATABASE_URL, echo=False)
 
 def init_db():
-    from .models.base import BaseModel  # ensure models imported
+    from .models.base import BaseModel
     from .models.user import User
     from .models.vehicle import Vehicle
     from .models.partner import Partner
@@ -15,9 +15,9 @@ def init_db():
     from .models.wallet import Wallet, WalletTransaction
     from .models.feedback import Feedback
     from .models.driver_location import DriverLocation
+    from .models.applications import PartnerPending, DriverPending
     SQLModel.metadata.create_all(engine)
 
-    # Lightweight migration for SQLite: ensure new payment columns exist on reservation table
     try:
         with engine.begin() as conn:
             dialect = conn.dialect.name
@@ -28,7 +28,6 @@ def init_db():
                     conn.exec_driver_sql("ALTER TABLE reservation ADD COLUMN total_amount NUMERIC DEFAULT 0")
                 if "payment_reference" not in names:
                     conn.exec_driver_sql("ALTER TABLE reservation ADD COLUMN payment_reference TEXT")
-                # Ensure new user profile columns exist
                 ucols = conn.exec_driver_sql("PRAGMA table_info('user')").fetchall()
                 unames = {c[1] for c in ucols}
                 def add_user_col(name: str, type_sql: str = "TEXT"):
@@ -47,9 +46,7 @@ def init_db():
                     "vehicle_image_url",
                 ]:
                     add_user_col(col, "TEXT")
-                # Add security flag for forced password change (SQLite uses INTEGER for booleans)
                 add_user_col("must_change_password", "INTEGER")
-                # Ensure partner approval column exists
                 pcols = conn.exec_driver_sql("PRAGMA table_info('partner')").fetchall()
                 pnames = {c[1] for c in pcols}
                 if "approved" not in pnames:
@@ -57,15 +54,58 @@ def init_db():
                         conn.exec_driver_sql("ALTER TABLE partner ADD COLUMN approved INTEGER DEFAULT 0")
                     except Exception:
                         pass
-                # Ensure partner created_at column exists (SQLite stores datetime as TEXT)
                 if "created_at" not in pnames:
                     try:
-                        # SQLite ALTER TABLE ADD COLUMN without default for broad compatibility
                         conn.exec_driver_sql("ALTER TABLE partner ADD COLUMN created_at TEXT")
                     except Exception:
                         pass
+                dpcols = conn.exec_driver_sql("PRAGMA table_info('driverpending')").fetchall()
+                dpnames = {c[1] for c in dpcols} if dpcols else set()
+                def add_dp_col(name: str, type_sql: str = "TEXT"):
+                    if name not in dpnames:
+                        try:
+                            conn.exec_driver_sql(f"ALTER TABLE driverpending ADD COLUMN {name} {type_sql}")
+                        except Exception:
+                            pass
+                for col, col_type in [
+                    ("tc_no_encrypted", "TEXT"),
+                    ("birth_year", "INTEGER"),
+                    ("driver_license_class", "TEXT"),
+                    ("driver_license_year", "INTEGER"),
+                    ("criminal_record_confirmed", "INTEGER"),
+                    ("kvkk_consent", "INTEGER"),
+                    ("data_processing_consent", "INTEGER"),
+                    ("vehicle_brand", "TEXT"),
+                    ("vehicle_model", "TEXT"),
+                    ("vehicle_year", "INTEGER"),
+                    ("fuel_type", "TEXT"),
+                    ("reject_reason", "TEXT"),
+                    ("rejected_at", "TEXT"),
+                ]:
+                    add_dp_col(col, col_type)
+                ppcols = conn.exec_driver_sql("PRAGMA table_info('partnerpending')").fetchall()
+                ppnames = {c[1] for c in ppcols} if ppcols else set()
+                def add_pp_col(name: str, type_sql: str = "TEXT"):
+                    if name not in ppnames:
+                        try:
+                            conn.exec_driver_sql(f"ALTER TABLE partnerpending ADD COLUMN {name} {type_sql}")
+                        except Exception:
+                            pass
+                for col, col_type in [
+                    ("company_name", "TEXT"),
+                    ("tax_office", "TEXT"),
+                    ("tax_number", "TEXT"),
+                    ("company_type", "TEXT"),
+                    ("tc_no_encrypted", "TEXT"),
+                    ("total_vehicles", "INTEGER"),
+                    ("fleet_type", "TEXT"),
+                    ("kvkk_consent", "INTEGER"),
+                    ("commercial_contract_approved", "INTEGER"),
+                    ("reject_reason", "TEXT"),
+                    ("rejected_at", "TEXT"),
+                ]:
+                    add_pp_col(col, col_type)
     except Exception:
-        # Ignore migration errors in dev
         pass
 
 def get_session():
