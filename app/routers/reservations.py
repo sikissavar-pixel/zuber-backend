@@ -10,6 +10,34 @@ from ..socket import sio
 router = APIRouter(prefix="/api/reservations", tags=["reservations"])
 
 
+@router.get("/live", dependencies=[Depends(require_role("admin"))])
+def get_live_reservations(session: Session = Depends(get_session)):
+    try:
+        live_statuses = ["pending", "assigned", "in_progress", "arrived", "qr_pending"]
+        reservations = session.exec(
+            select(Reservation).where(Reservation.status.in_(live_statuses))
+            .order_by(Reservation.pickup_time)
+        ).all()
+        
+        result = []
+        for r in reservations:
+            result.append({
+                "id": r.id,
+                "status": r.status,
+                "pickup_time": r.pickup_time.isoformat() if r.pickup_time else None,
+                "pickup_location": r.pickup_location,
+                "dropoff_location": r.dropoff_location,
+                "driver_id": r.driver_id,
+                "partner_id": r.partner_id,
+                "guest_id": r.guest_id,
+                "payment_status": r.payment_status,
+            })
+        
+        return {"items": result, "total": len(result)}
+    except Exception:
+        return {"items": [], "total": 0}
+
+
 def _find_available_driver(session: Session) -> Optional[int]:
     """Basic auto-assign: pick the first driver user."""
     driver = session.exec(select(User).where(User.role == "driver")).first()

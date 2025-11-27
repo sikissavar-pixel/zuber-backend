@@ -55,16 +55,17 @@ def activate_user_flags(user: User):
 
 EMAIL_HTML_TEMPLATE = """
 <h3>Zuber İstanbul'a Hoş Geldiniz</h3>
+<p>Sayın {full_name},</p>
 <p>Başvurunuz başarıyla onaylandı.</p>
 <p><b>E-posta:</b> {email}</p>
 <p><b>Geçici Şifre:</b> {password}</p>
 <p>Giriş: <a href='https://zuber-37e2.vercel.app/login'>https://zuber-37e2.vercel.app/login</a></p>
-<p>Lütfen ilk girişte şifrenizi değiştiriniz.</p>
+<p><b>ÖNEMLİ:</b> Lütfen ilk girişte şifrenizi değiştiriniz.</p>
 <br/>
 <b>Zuber İstanbul</b>
 """
 
 
 def send_approval_email(full_name: str, email: str, password: str):
-    html_body = EMAIL_HTML_TEMPLATE.format(email=email, password=password)
+    html_body = EMAIL_HTML_TEMPLATE.format(full_name=full_name, email=email, password=password)
     send_email("Zuber Hesabınız Onaylandı", [email], html_body)
