@@ -1,13 +1,9 @@
-import smtplib
-from email.message import EmailMessage
-from typing import Iterable
 import os
+import httpx
+from typing import Iterable
 
-SMTP_HOST = os.getenv("SMTP_HOST")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USER = os.getenv("SMTP_USER")
-SMTP_PASS = os.getenv("SMTP_PASS")
-FROM_EMAIL = os.getenv("FROM_EMAIL", SMTP_USER or "")
+RESEND_API_KEY = os.getenv("RESEND_API_KEY")
+RESEND_API_URL = "https://api.resend.com/emails"
 
 
 class MailerError(Exception):
@@ -15,18 +11,37 @@ class MailerError(Exception):
 
 
 def send_email(subject: str, recipients: Iterable[str], body: str):
-    if not SMTP_HOST or not SMTP_USER or not SMTP_PASS:
-        raise MailerError("SMTP configuration missing")
-    message = EmailMessage()
-    message["Subject"] = subject
-    message["From"] = FROM_EMAIL or SMTP_USER
-    message["To"] = ", ".join(recipients)
-    message.set_content(body)
-
+    if not RESEND_API_KEY:
+        raise MailerError("RESEND_API_KEY not configured")
+    
+    recipient_list = list(recipients)
+    if not recipient_list:
+        raise MailerError("No recipients provided")
+    
+    payload = {
+        "from": "Zuber İstanbul <zuberistanbul@gmail.com>",
+        "to": recipient_list,
+        "subject": subject,
+        "html": body,
+    }
+    
     try:
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
-            server.starttls()
-            server.login(SMTP_USER, SMTP_PASS)
-            server.send_message(message)
+        response = httpx.post(
+            RESEND_API_URL,
+            headers={
+                "Authorization": f"Bearer {RESEND_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=10.0,
+        )
+        
+        if response.status_code != 200:
+            error_detail = response.text or f"HTTP {response.status_code}"
+            raise MailerError(f"Resend API error: {error_detail}")
+        
+        return response.json()
+    except httpx.RequestError as exc:
+        raise MailerError(f"Network error: {str(exc)}") from exc
     except Exception as exc:
         raise MailerError(str(exc)) from exc

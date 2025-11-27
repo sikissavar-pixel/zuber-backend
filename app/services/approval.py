@@ -53,32 +53,18 @@ def activate_user_flags(user: User):
         setattr(user, "must_change_password", True)
 
 
-EMAIL_SUBJECT = "Zuber’e Hoş Geldiniz – Başvurunuz Onaylandı 🎉"
-EMAIL_BODY = """Merhaba {full_name},
-
-Zuber ailesine hoş geldiniz! 🎉
-Driver / Partner başvurunuz başarıyla onaylanmıştır ve hesabınız artık aktiftir.
-
-Giriş bilgileriniz aşağıda yer almaktadır:
-
-E-posta: {email}
-Geçici Şifre: {password}
-
-Hesabınıza giriş yapmak için:
-https://zuber-37e2.vercel.app/login
-
-Güvenliğiniz için ilk girişten sonra şifrenizi değiştirmenizi önemle rica ederiz.
-
-Artık Zuber üzerinden aktif olarak işlemlerinizi yönetebilir, kazançlarınızı takip edebilir ve sistemi tam kapasite kullanabilirsiniz.
-
-Herhangi bir sorunuz olursa bizimle iletişime geçmekten çekinmeyin.
-
-Keyifli kullanımlar dileriz 🚗✨
-Zuber İstanbul
+EMAIL_HTML_TEMPLATE = """
+<h3>Zuber İstanbul'a Hoş Geldiniz</h3>
+<p>Başvurunuz başarıyla onaylandı.</p>
+<p><b>E-posta:</b> {email}</p>
+<p><b>Geçici Şifre:</b> {password}</p>
+<p>Giriş: <a href='https://zuber-37e2.vercel.app/login'>https://zuber-37e2.vercel.app/login</a></p>
+<p>Lütfen ilk girişte şifrenizi değiştiriniz.</p>
+<br/>
+<b>Zuber İstanbul</b>
 """
 
 
 def send_approval_email(full_name: str, email: str, password: str):
-    body = EMAIL_BODY.format(full_name=full_name, email=email, password=password)
-    send_email(EMAIL_SUBJECT, [email], body)
-
+    html_body = EMAIL_HTML_TEMPLATE.format(email=email, password=password)
+    send_email("Zuber Hesabınız Onaylandı", [email], html_body)

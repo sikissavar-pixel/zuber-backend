@@ -8,7 +8,7 @@ from .database import init_db, engine
 from sqlmodel import Session
 from .models.booking_message import BookingMessage
 from .models.reservation import Reservation, ReservationRead
-from .routers import users, reservations, payments, vehicles, partners, applications, partner_approval, bookings, wallet, admin_config, driver_portal, admin_tools, admin_panel, admin_manage, maps
+from .routers import users, reservations, payments, vehicles, partners, applications, partner_approval, bookings, wallet, admin_config, driver_portal, admin_tools, admin_panel, admin_manage, maps, system
 from .socket import sio
 
 # FastAPI app
@@ -40,15 +40,6 @@ init_db()
 async def health_check():
     return {"status": "ok"}
 
-@app.get("/api/test-mail")
-def test_mail():
-    return {
-        "host": os.getenv("SMTP_HOST"),
-        "port": os.getenv("SMTP_PORT"),
-        "user": os.getenv("SMTP_USER"),
-        "pass_len": len(os.getenv("SMTP_PASS") or ""),
-        "from": os.getenv("FROM_EMAIL"),
-    }
 
 # Routers
 app.include_router(users.router)
@@ -66,6 +57,7 @@ app.include_router(admin_tools.router)
 app.include_router(admin_panel.router)
 app.include_router(admin_manage.router)
 app.include_router(maps.router)
+app.include_router(system.router)
 
 # Serve static files (uploads) - only if directory exists
 static_dir = os.path.join(os.path.dirname(__file__), "static")
