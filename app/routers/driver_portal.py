@@ -1,6 +1,7 @@
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select, SQLModel
+from sqlalchemy import or_
 from ..database import get_session
 from ..auth import get_current_user
 from ..models.user import User
@@ -52,6 +53,22 @@ def driver_reservations(
     rows = [r for r in rows if r.status != "cancelled"]
     # Sort by pickup_time descending for recent-first
     rows.sort(key=lambda r: r.pickup_time, reverse=True)
+    return [ReservationRead.model_validate(r) for r in rows]
+
+
+@router.get("/open-reservations", response_model=list[ReservationRead])
+def open_reservations(
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != "driver":
+        raise HTTPException(status_code=403, detail="Sadece sürücüler erişebilir")
+    rows = session.exec(
+        select(Reservation)
+        .where(Reservation.status == "pending")
+        .where(or_(Reservation.driver_id.is_(None), Reservation.driver_id == current_user.id))
+        .order_by(Reservation.pickup_time)
+    ).all()
     return [ReservationRead.model_validate(r) for r in rows]
 
 
@@ -220,5 +237,12 @@ def get_my_location(
         raise HTTPException(status_code=403, detail="Sadece sürücüler bu veriye erişebilir")
     location = session.exec(select(DriverLocation).where(DriverLocation.driver_id == current_user.id)).first()
     if not location:
-        raise HTTPException(status_code=404, detail="Konum bulunamadı")
-    return location
+        location = DriverLocation(
+            driver_id=current_user.id,
+            latitude=41.0082,
+            longitude=28.9784,
+        )
+        session.add(location)
+        session.commit()
+        session.refresh(location)
+    return DriverLocationRead.model_validate(location)
