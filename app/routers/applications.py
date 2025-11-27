@@ -151,8 +151,11 @@ async def apply_partner(
         status="pending"
     )
     session.add(app)
+    session.flush()
     session.commit()
     session.refresh(app)
+    
+    logger.info(f"Partner application created: id={app.id}, email={payload.contact_email}, status={app.status}")
     
     try:
         await sio.emit("new_application", {"type": "partner", "application_id": app.id}, to="admin_room")
@@ -266,8 +269,11 @@ async def apply_driver(
         status="pending"
     )
     session.add(app)
+    session.flush()
     session.commit()
     session.refresh(app)
+    
+    logger.info(f"Driver application created: id={app.id}, email={payload.email}, status={app.status}")
     
     try:
         await sio.emit("new_application", {"type": "driver", "application_id": app.id}, to="admin_room")
@@ -385,12 +391,18 @@ def list_driver_applications(
     status: Optional[str] = Query(default="pending"),
     session: Session = Depends(get_session),
 ):
-    status_filter = _resolve_status_filter(status)
-    stmt = select(DriverPending)
-    if status_filter:
-        stmt = stmt.where(DriverPending.status == status_filter)
-    apps = session.exec(stmt.order_by(DriverPending.id.desc())).all()
-    return {"items": [_driver_app_to_read(app).model_dump() for app in apps]}
+    try:
+        status_filter = _resolve_status_filter(status)
+        stmt = select(DriverPending)
+        if status_filter:
+            stmt = stmt.where(DriverPending.status == status_filter)
+        apps = session.exec(stmt.order_by(DriverPending.id.desc())).all()
+        result = {"items": [_driver_app_to_read(app).model_dump() for app in apps]}
+        logger.info(f"List driver applications: status={status_filter}, count={len(result['items'])}")
+        return result
+    except Exception as e:
+        logger.error(f"Error listing driver applications: {e}")
+        return {"items": []}
 
 
 @router.post("/applications/partners/{app_id}/approve", dependencies=[Depends(require_role("admin"))])
