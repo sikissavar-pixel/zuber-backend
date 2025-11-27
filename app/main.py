@@ -40,6 +40,16 @@ init_db()
 async def health_check():
     return {"status": "ok"}
 
+@app.get("/api/test-mail")
+def test_mail():
+    return {
+        "host": os.getenv("SMTP_HOST"),
+        "port": os.getenv("SMTP_PORT"),
+        "user": os.getenv("SMTP_USER"),
+        "pass_len": len(os.getenv("SMTP_PASS") or ""),
+        "from": os.getenv("FROM_EMAIL"),
+    }
+
 # Routers
 app.include_router(users.router)
 app.include_router(reservations.router)
