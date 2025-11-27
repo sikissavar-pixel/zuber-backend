@@ -4,11 +4,13 @@ from ..database import get_session
 from ..models.user import User, UserCreate, UserRead, UserLogin, UserUpdate
 from ..models.partner import Partner
 from ..models.applications import PartnerPending
-from ..auth import get_password_hash, verify_password, create_access_token, get_current_user
+from ..auth import get_password_hash, verify_password, create_access_token, get_current_user, require_role
 import os
 from datetime import datetime
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from ..services.approval import generate_password
+from ..services.mailer import send_email, MailerError
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -19,7 +21,6 @@ def register(payload: UserCreate, session: Session = Depends(get_session)):
     try:
         hashed = get_password_hash(payload.password)
     except ValueError as e:
-        # Return a clear client error instead of a 500 when hashing fails
         raise HTTPException(status_code=400, detail=str(e))
     user = User(full_name=payload.full_name, email=payload.email, password_hash=hashed, role=payload.role)
     session.add(user)
@@ -31,20 +32,16 @@ def register(payload: UserCreate, session: Session = Depends(get_session)):
 def login(payload: UserLogin, session: Session = Depends(get_session)):
     user = session.exec(select(User).where(User.email == payload.email)).first()
     if not user or not verify_password(payload.password, user.password_hash):
-        # Prefer invalid credentials if there is already an approved partner record
         partner = session.exec(select(Partner).where(Partner.contact_email == payload.email)).first()
         if partner and getattr(partner, "approved", False):
             raise HTTPException(status_code=401, detail="Invalid credentials")
-        # Otherwise, if there is a pending application, show the pending message
         pending = session.exec(select(PartnerPending).where(PartnerPending.contact_email == payload.email, PartnerPending.status == "pending")).first()
         if pending:
             raise HTTPException(status_code=403, detail="Başvurunuz onaylanmadı")
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    # Admin özel giriş kontrolü: sadece belirlenen email/şifre ile admin erişimi
     if user.role == "admin":
         if not (payload.email == "ysr@gmail.com" and payload.password == "Aslan123"):
             raise HTTPException(status_code=403, detail="Yönetim paneline sadece özel admin hesabı ile giriş yapılabilir")
-        # Admin login logla
         try:
             base_dir = os.path.join(os.path.dirname(__file__), "..", "logs")
             os.makedirs(base_dir, exist_ok=True)
@@ -53,18 +50,14 @@ def login(payload: UserLogin, session: Session = Depends(get_session)):
                 ts = datetime.utcnow().isoformat()
                 f.write(f"{ts} | admin_login | user_id={user.id} | email={user.email}\n")
         except Exception:
-            # log hatalarını sessizce geç
             pass
     token = create_access_token(user_id=user.id, role=user.role)
-    # Partner approval gate: ensure approved partner exists before allowing login
     if user.role == "partner":
-        # Refresh user to ensure we read latest must_change_password, etc.
         session.refresh(user)
         partners = session.exec(select(Partner).where(Partner.contact_email == user.email)).all()
         approved_exists = any(getattr(p, "approved", False) for p in partners)
         if not approved_exists:
             raise HTTPException(status_code=403, detail="Başvurunuz onaylanmadı")
-    # include must_change_password to allow client redirect to change-password
     return {
         "access_token": token,
         "token_type": "bearer",
@@ -94,13 +87,11 @@ def update_me(
         current_user.full_name = payload.full_name
         updated = True
     if payload.email is not None:
-        # Ensure email is unique
         existing = session.exec(select(User).where(User.email == payload.email)).first()
         if existing and existing.id != current_user.id:
             raise HTTPException(status_code=400, detail="Email already in use")
         current_user.email = payload.email
         updated = True
-    # Extended fields
     if payload.identity_number is not None:
         current_user.identity_number = payload.identity_number
         updated = True
@@ -139,18 +130,14 @@ def change_password(
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
-    # Verify current password
     if not verify_password(payload.current_password, current_user.password_hash):
         raise HTTPException(status_code=400, detail="Mevcut şifre yanlış")
-    # Hash and update
     try:
         new_hash = get_password_hash(payload.new_password)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     current_user.password_hash = new_hash
-    # Clear the force-change flag
     try:
-        # Attribute may not exist on old DB; guard assignment
         setattr(current_user, "must_change_password", False)
     except Exception:
         pass
@@ -180,7 +167,6 @@ def upload_me_files(
         dest = os.path.join(base_dir, safe_name)
         with open(dest, "wb") as f:
             f.write(upload.file.read())
-        # Build public URL
         url = f"/static/uploads/users/{current_user.id}/{safe_name}"
         return url
 
@@ -209,3 +195,67 @@ def upload_me_files(
         "driver_license_url": license_url or current_user.driver_license_url,
         "vehicle_image_url": vehicle_url or current_user.vehicle_image_url,
     })
+
+
+@router.patch("/{user_id}/deactivate", dependencies=[Depends(require_role("admin"))])
+def deactivate_user(
+    user_id: int,
+    session: Session = Depends(get_session),
+):
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if hasattr(user, "is_active"):
+        setattr(user, "is_active", False)
+    session.add(user)
+    session.commit()
+    return {"success": True, "message": "User deactivated"}
+
+
+@router.post("/{user_id}/force-logout", dependencies=[Depends(require_role("admin"))])
+def force_logout(
+    user_id: int,
+    session: Session = Depends(get_session),
+):
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"success": True, "message": "User logged out"}
+
+
+@router.post("/{user_id}/reset-password", dependencies=[Depends(require_role("admin"))])
+def reset_password(
+    user_id: int,
+    session: Session = Depends(get_session),
+):
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    try:
+        new_password = generate_password()
+        hashed = get_password_hash(new_password)
+        user.password_hash = hashed
+        if hasattr(user, "must_change_password"):
+            setattr(user, "must_change_password", True)
+        session.add(user)
+        session.flush()
+        
+        email_html = f"""
+        <h3>Zuber İstanbul - Şifre Sıfırlama</h3>
+        <p>Yeni şifreniz:</p>
+        <p><b>{new_password}</b></p>
+        <p>Giriş: <a href='https://zuber-37e2.vercel.app/login'>https://zuber-37e2.vercel.app/login</a></p>
+        <p>Lütfen ilk girişte şifrenizi değiştiriniz.</p>
+        <br/>
+        <b>Zuber İstanbul</b>
+        """
+        send_email("Zuber Şifre Sıfırlama", [user.email], email_html)
+        session.commit()
+        return {"success": True, "message": "Password reset and sent via email"}
+    except MailerError as exc:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=f"Failed to send email: {str(exc)}")
+    except Exception as exc:
+        session.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to reset password: {str(exc)}")

@@ -1,3 +1,4 @@
+import os
 from fastapi import APIRouter, Depends
 from sqlmodel import Session
 from sqlalchemy import text
@@ -23,9 +24,13 @@ def system_status():
     except Exception:
         socket_status = "error"
 
-    return {
-        "api": "ok",
-        "db": db_status,
-        "socket": socket_status,
-    }
+    email_status = "ok"
+    if not os.getenv("RESEND_API_KEY"):
+        email_status = "error"
 
+    return {
+        "status": "online",
+        "db": db_status == "ok",
+        "email": email_status == "ok",
+        "socket": socket_status == "ok",
+    }

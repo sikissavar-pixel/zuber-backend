@@ -19,7 +19,7 @@ def send_email(subject: str, recipients: Iterable[str], body: str):
         raise MailerError("No recipients provided")
     
     payload = {
-        "from": "Zuber İstanbul <zuberistanbul@gmail.com>",
+        "from": "Zuber İstanbul <noreply@zuberistanbul.com>",
         "to": recipient_list,
         "subject": subject,
         "html": body,

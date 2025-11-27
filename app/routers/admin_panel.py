@@ -42,6 +42,10 @@ def admin_summary(session: Session = Depends(get_session)):
     total_users = session.exec(select(func.count(User.id))).one() or 0
     total_drivers = session.exec(select(func.count(User.id)).where(User.role == "driver")).one() or 0
     total_partners = session.exec(select(func.count(Partner.id))).one() or 0
+    
+    pending_partner_apps = session.exec(select(func.count(PartnerPending.id)).where(PartnerPending.status == "pending")).one() or 0
+    pending_driver_apps = session.exec(select(func.count(DriverPending.id)).where(DriverPending.status == "pending")).one() or 0
+    total_applications = pending_partner_apps + pending_driver_apps
 
     recent_locations = session.exec(
         select(DriverLocation).where(DriverLocation.updated_at >= now - timedelta(minutes=5))
@@ -82,6 +86,7 @@ def admin_summary(session: Session = Depends(get_session)):
         "total_users": total_users,
         "total_drivers": total_drivers,
         "total_partners": total_partners,
+        "total_applications": total_applications,
         "online_drivers": online_drivers,
         "active_reservations": active_reservations,
         "daily_revenue": daily_revenue,
