@@ -75,6 +75,7 @@ def login(payload: UserLogin, session: Session = Depends(get_session)):
     }
 
 @router.get("/", response_model=list[UserRead])
+@router.get("", response_model=list[UserRead], include_in_schema=False)
 def list_users(session: Session = Depends(get_session)):
     return session.exec(select(User)).all()
 
