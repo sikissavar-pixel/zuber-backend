@@ -2,8 +2,9 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select, SQLModel
 from sqlalchemy import or_
+from datetime import datetime, timedelta
 from ..database import get_session
-from ..auth import get_current_user
+from ..auth import get_current_user, require_role
 from ..models.user import User
 from ..models.reservation import Reservation, ReservationRead
 from ..models.wallet import Wallet, WalletTransaction
@@ -11,7 +12,6 @@ from ..models.feedback import Feedback, FeedbackCreate
 from ..models.driver_location import DriverLocation, DriverLocationRead
 from ..socket import sio
 import asyncio
-from datetime import datetime
 
 router = APIRouter(prefix="/api/driver", tags=["driver"])
 
@@ -38,6 +38,32 @@ class DriverLocationPayload(SQLModel):
     accuracy: float | None = None
 
 
+@router.get("/locations")
+def get_driver_locations(
+    session: Session = Depends(get_session),
+    _: User = Depends(require_role("admin")),
+):
+    try:
+        now = datetime.utcnow()
+        cutoff = now - timedelta(minutes=5)
+        locations = session.exec(
+            select(DriverLocation).where(DriverLocation.updated_at >= cutoff)
+        ).all()
+        
+        result = []
+        for loc in locations:
+            result.append({
+                "driver_id": loc.driver_id,
+                "lat": loc.latitude,
+                "lng": loc.longitude,
+                "status": "online"
+            })
+        
+        return result
+    except Exception:
+        return []
+
+
 @router.get("/reservations", response_model=list[ReservationRead])
 def driver_reservations(
     session: Session = Depends(get_session),
@@ -49,9 +75,7 @@ def driver_reservations(
         select(Reservation)
         .where(Reservation.driver_id == current_user.id)
     ).all()
-    # Optional: exclude cancelled to keep dashboard clean
     rows = [r for r in rows if r.status != "cancelled"]
-    # Sort by pickup_time descending for recent-first
     rows.sort(key=lambda r: r.pickup_time, reverse=True)
     return [ReservationRead.model_validate(r) for r in rows]
 
@@ -88,25 +112,20 @@ def qr_verify(
     if r.driver_id and r.driver_id != current_user.id:
         raise HTTPException(status_code=403, detail="Bu rezervasyon size ait değil")
 
-    # Demo amount and commission
     amount = r.total_amount or Decimal("350.00")
 
-    # Partner or creator wallet holds the blocked funds
     payer_id = (r.partner_id or r.created_by_user_id)
     if not payer_id:
-        payer_id = current_user.id  # fallback in demo
+        payer_id = current_user.id
     w = _get_or_create_wallet(session, payer_id)
 
-    # Ensure blocked_balance has enough to release (simulate pool)
     if w.blocked_balance < amount:
-        # Move from available or top up demo balance
         missing = amount - w.blocked_balance
         w.available_balance = w.available_balance + missing
         w.blocked_balance = w.blocked_balance + missing
         session.add(w)
         session.commit()
 
-    # Mark reservation completed & paid
     r.status = "completed"
     r.payment_status = "paid"
     r.total_amount = amount
@@ -114,13 +133,11 @@ def qr_verify(
     session.commit()
     session.refresh(r)
 
-    # Commission and payout (using configured percent)
     from ..config import settings
     commission_rate = getattr(settings, "SYSTEM_FEE_PERCENT", 0.10)
     commission = (amount * Decimal(str(commission_rate))).quantize(Decimal("0.01"))
     payout = (amount - commission).quantize(Decimal("0.01"))
 
-    # Reduce blocked balance and log transactions
     w.blocked_balance = w.blocked_balance - amount
     session.add(w)
     session.commit()
@@ -130,10 +147,8 @@ def qr_verify(
     session.add(tx_payout)
     session.commit()
 
-    # Notify via socket for UI feedback
     try:
         payload = ReservationRead.model_validate(r).model_dump()
-        # Emit asynchronously so sync endpoint doesn't cause coroutine-not-awaited
         sio.start_background_task(asyncio.run, sio.emit("booking_update", {"booking_id": r.id, "status": r.status, "payment_status": r.payment_status}))
         sio.start_background_task(asyncio.run, sio.emit("reservation_updated", payload))
         sio.start_background_task(asyncio.run, sio.emit("trip_completed", payload))
@@ -173,7 +188,6 @@ def get_earnings(
     if current_user.role != "driver":
         raise HTTPException(status_code=403, detail="Sadece sürücüler erişebilir")
 
-    # Dummy monthly earnings aligned with frontend chart
     monthly = [
         {"month": "Oca", "amount": 3200},
         {"month": "Şub", "amount": 2800},
