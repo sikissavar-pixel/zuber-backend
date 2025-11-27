@@ -17,15 +17,19 @@ from ..services.approval import ensure_user, activate_user_flags, send_approval_
 router = APIRouter(prefix="/api", tags=["applications"])
 logger = logging.getLogger(__name__)
 
+STATUS_PENDING = "pending"
+STATUS_APPROVED = "approved"
+STATUS_REJECTED = "rejected"
+ALLOWED_STATUSES = {STATUS_PENDING, STATUS_APPROVED, STATUS_REJECTED}
+
 
 # Public apply endpoints
 @router.post("/partners/apply", response_model=PartnerPending, status_code=status.HTTP_201_CREATED)
 async def apply_partner(payload: PartnerPending, session: Session = Depends(get_session)):
-    payload.status = "pending"
+    payload.status = STATUS_PENDING
     session.add(payload)
     session.commit()
     session.refresh(payload)
-    # Broadcast new application to admin room
     try:
         await sio.emit("new_application", {"type": "partner", "data": payload.model_dump()}, to="admin_room")
     except Exception:
@@ -35,7 +39,7 @@ async def apply_partner(payload: PartnerPending, session: Session = Depends(get_
 
 @router.post("/drivers/apply", response_model=DriverPending, status_code=status.HTTP_201_CREATED)
 async def apply_driver(payload: DriverPending, session: Session = Depends(get_session)):
-    payload.status = "pending"
+    payload.status = STATUS_PENDING
     session.add(payload)
     session.commit()
     session.refresh(payload)
@@ -48,12 +52,11 @@ async def apply_driver(payload: DriverPending, session: Session = Depends(get_se
 
 def _resolve_status_filter(status: Optional[str]) -> Optional[str]:
     if status is None or status == "":
-        return "pending"
+        return STATUS_PENDING
     status = status.lower()
     if status == "all":
         return None
-    allowed = {"pending", "approved", "rejected"}
-    if status not in allowed:
+    if status not in ALLOWED_STATUSES:
         raise HTTPException(status_code=400, detail="Invalid status")
     return status
 
@@ -72,7 +75,7 @@ def _update_user_flags(session: Session, email: str, *, is_active: bool, is_appr
 # Admin-only listing endpoints
 @router.get("/applications/partners", response_model=List[PartnerPending], dependencies=[Depends(require_role("admin"))])
 def list_partner_applications(
-    status: Optional[str] = Query(default="pending"),
+    status: Optional[str] = Query(default=STATUS_PENDING),
     session: Session = Depends(get_session),
 ):
     status_filter = _resolve_status_filter(status)
@@ -85,7 +88,7 @@ def list_partner_applications(
 
 @router.get("/applications/drivers", response_model=List[DriverPending], dependencies=[Depends(require_role("admin"))])
 def list_driver_applications(
-    status: Optional[str] = Query(default="pending"),
+    status: Optional[str] = Query(default=STATUS_PENDING),
     session: Session = Depends(get_session),
 ):
     status_filter = _resolve_status_filter(status)
@@ -99,8 +102,10 @@ def list_driver_applications(
 # Admin approval/rejection endpoints
 @router.post("/applications/partners/{app_id}/approve", dependencies=[Depends(require_role("admin"))])
 def approve_partner(app_id: int, session: Session = Depends(get_session)):
-    app = session.get(PartnerPending, app_id)
-    if not app or app.status != "pending":
+    app = session.exec(
+        select(PartnerPending).where(PartnerPending.id == app_id, PartnerPending.status == STATUS_PENDING)
+    ).first()
+    if not app:
         raise HTTPException(status_code=404, detail="Application not found or not pending")
 
     partner = session.exec(select(Partner).where(Partner.contact_email == app.contact_email)).first()
@@ -126,12 +131,18 @@ def approve_partner(app_id: int, session: Session = Depends(get_session)):
     user.contact_phone = user.contact_phone or app.contact_phone
     session.add(user)
 
-    app.status = "approved"
+    app.status = STATUS_APPROVED
     session.add(app)
 
-    dups = session.exec(select(PartnerPending).where(PartnerPending.contact_email == app.contact_email, PartnerPending.status == "pending", PartnerPending.id != app_id)).all()
+    dups = session.exec(
+        select(PartnerPending).where(
+            PartnerPending.contact_email == app.contact_email,
+            PartnerPending.status == STATUS_PENDING,
+            PartnerPending.id != app_id,
+        )
+    ).all()
     for dup in dups:
-        dup.status = "approved"
+        dup.status = STATUS_APPROVED
         session.add(dup)
 
     session.flush()
@@ -159,8 +170,10 @@ def approve_partner(app_id: int, session: Session = Depends(get_session)):
 # Alias with PATCH method to support clients expecting PATCH
 @router.patch("/applications/partners/{app_id}/approve", dependencies=[Depends(require_role("admin"))])
 def approve_partner_patch(app_id: int, session: Session = Depends(get_session)):
-    app = session.get(PartnerPending, app_id)
-    if not app or app.status != "pending":
+    app = session.exec(
+        select(PartnerPending).where(PartnerPending.id == app_id, PartnerPending.status == STATUS_PENDING)
+    ).first()
+    if not app:
         raise HTTPException(status_code=404, detail="Application not found or not pending")
 
     partner = session.exec(select(Partner).where(Partner.contact_email == app.contact_email)).first()
@@ -186,12 +199,18 @@ def approve_partner_patch(app_id: int, session: Session = Depends(get_session)):
     user.contact_phone = user.contact_phone or app.contact_phone
     session.add(user)
 
-    app.status = "approved"
+    app.status = STATUS_APPROVED
     session.add(app)
 
-    dups = session.exec(select(PartnerPending).where(PartnerPending.contact_email == app.contact_email, PartnerPending.status == "pending", PartnerPending.id != app_id)).all()
+    dups = session.exec(
+        select(PartnerPending).where(
+            PartnerPending.contact_email == app.contact_email,
+            PartnerPending.status == STATUS_PENDING,
+            PartnerPending.id != app_id,
+        )
+    ).all()
     for dup in dups:
-        dup.status = "approved"
+        dup.status = STATUS_APPROVED
         session.add(dup)
 
     session.flush()
@@ -216,10 +235,12 @@ def approve_partner_patch(app_id: int, session: Session = Depends(get_session)):
 
 @router.post("/applications/partners/{app_id}/reject", dependencies=[Depends(require_role("admin"))])
 def reject_partner(app_id: int, session: Session = Depends(get_session)):
-    app = session.get(PartnerPending, app_id)
-    if not app or app.status != "pending":
+    app = session.exec(
+        select(PartnerPending).where(PartnerPending.id == app_id, PartnerPending.status == STATUS_PENDING)
+    ).first()
+    if not app:
         raise HTTPException(status_code=404, detail="Application not found or not pending")
-    app.status = "rejected"
+    app.status = STATUS_REJECTED
     session.add(app)
     partner = session.exec(select(Partner).where(Partner.contact_email == app.contact_email)).first()
     if partner:
@@ -237,8 +258,10 @@ def reject_partner(app_id: int, session: Session = Depends(get_session)):
 
 @router.post("/applications/drivers/{app_id}/approve", dependencies=[Depends(require_role("admin"))])
 def approve_driver(app_id: int, session: Session = Depends(get_session)):
-    app = session.get(DriverPending, app_id)
-    if not app or app.status != "pending":
+    app = session.exec(
+        select(DriverPending).where(DriverPending.id == app_id, DriverPending.status == STATUS_PENDING)
+    ).first()
+    if not app:
         raise HTTPException(status_code=404, detail="Application not found or not pending")
 
     user, temp_password = ensure_user(session, app.email, app.full_name, "driver")
@@ -246,7 +269,7 @@ def approve_driver(app_id: int, session: Session = Depends(get_session)):
     user.full_name = app.full_name
     user.contact_phone = app.phone
     user.vehicle_plate = app.vehicle_plate
-    app.status = "approved"
+    app.status = STATUS_APPROVED
     session.add(user)
     session.add(app)
     session.flush()
@@ -270,10 +293,12 @@ def approve_driver(app_id: int, session: Session = Depends(get_session)):
 
 @router.post("/applications/drivers/{app_id}/reject", dependencies=[Depends(require_role("admin"))])
 def reject_driver(app_id: int, session: Session = Depends(get_session)):
-    app = session.get(DriverPending, app_id)
-    if not app or app.status != "pending":
+    app = session.exec(
+        select(DriverPending).where(DriverPending.id == app_id, DriverPending.status == STATUS_PENDING)
+    ).first()
+    if not app:
         raise HTTPException(status_code=404, detail="Application not found or not pending")
-    app.status = "rejected"
+    app.status = STATUS_REJECTED
     session.add(app)
     _update_user_flags(session, app.email, is_active=False, is_approved=False)
     session.commit()
