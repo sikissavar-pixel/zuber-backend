@@ -11,6 +11,8 @@ from datetime import datetime
 
 router = APIRouter(prefix="/api/wallet", tags=["wallet"])
 
+TEST_TOPUP_AMOUNT = Decimal("500.00")
+
 
 def _get_or_create_wallet(session: Session, user_id: int) -> Wallet:
     w = session.exec(select(Wallet).where(Wallet.user_id == user_id)).first()
@@ -121,6 +123,35 @@ def topup_wallet(
             f.write(f"{ts} | wallet_topup | user_id={current_user.id} | amount={payload.amount} | method={payload.method}\n")
     except Exception:
         pass
+
+    return {
+        "status": "ok",
+        "summary": WalletSummary(available_balance=w.available_balance, blocked_balance=w.blocked_balance).model_dump(),
+    }
+
+
+@router.post("/add-test-balance")
+def add_test_balance(
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role not in {"partner", "admin"}:
+        raise HTTPException(status_code=403, detail="Test bakiyesi sadece partnerlar için aktif")
+
+    w = _get_or_create_wallet(session, current_user.id)
+    w.available_balance = w.available_balance + TEST_TOPUP_AMOUNT
+    session.add(w)
+    session.commit()
+    session.refresh(w)
+
+    tx = WalletTransaction(
+        user_id=current_user.id,
+        type="topup",
+        amount=TEST_TOPUP_AMOUNT,
+        description="Test bakiyesi (+500₺)",
+    )
+    session.add(tx)
+    session.commit()
 
     return {
         "status": "ok",
